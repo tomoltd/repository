@@ -4,6 +4,15 @@ const EPSILON = 1e-9;
 
 export class PortfolioError extends Error {}
 
+export class OversellError extends PortfolioError {
+  constructor(
+    message: string,
+    readonly tradeId: number,
+  ) {
+    super(message);
+  }
+}
+
 export interface Position {
   accountId: string;
   symbol: string;
@@ -68,8 +77,9 @@ export function replay(trades: Trade[], securities: Map<string, Security>): Ledg
       continue;
     }
     if (trade.quantity > position.quantity + EPSILON)
-      throw new PortfolioError(
+      throw new OversellError(
         `${trade.tradeDate} の売却（取引 #${trade.id || '新規'}、${trade.accountId} / ${trade.symbol}、${trade.quantity}）が、その時点の保有数量 ${round(position.quantity, 6)} を超えています。`,
+        trade.id,
       );
     const ratio = Math.min(1, trade.quantity / position.quantity);
     const removedLocal = position.costLocal * ratio;

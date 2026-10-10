@@ -1,6 +1,7 @@
 import { parseDate, parseNumber, parseSide, readTradeRows } from './csv.js';
 import {
   allocate,
+  OversellError,
   PortfolioError,
   replay,
   tradeAmount,
@@ -368,31 +369,38 @@ export class PortfolioService {
       });
     }
     if (errors.length) throw new PortfolioError(`取り込みを中止しました。\n${errors.join('\n')}`);
-    const apply = () =>
-      inputs.map((input, index) => {
-        try {
-          return this.store.insertTrade(this.prepareTrade(input));
-        } catch (error) {
-          throw new PortfolioError(
-            `${rows[index]!.line} 行目: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
-      });
-    if (options.dryRun) {
-      // Run the import inside a transaction that always rolls back.
-      try {
-        this.store.transaction(() => {
-          apply();
-          this.ledger();
-          throw new DryRun();
+    const lineOf = new Map<number, number>();
+    const run = () =>
+      this.store.transaction(() => {
+        const ids = inputs.map((input, index) => {
+          try {
+            const id = this.store.insertTrade(this.prepareTrade(input));
+            lineOf.set(id, rows[index]!.line);
+            return id;
+          } catch (error) {
+            throw new PortfolioError(
+              `${rows[index]!.line} 行目: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
         });
-      } catch (error) {
-        if (!(error instanceof DryRun)) throw error;
-      }
+        try {
+          this.ledger();
+        } catch (error) {
+          const line = error instanceof OversellError && lineOf.get(error.tradeId);
+          if (line) throw new PortfolioError(`${line} 行目: ${error.message}`);
+          throw error;
+        }
+        // A dry run validates everything, then rolls back.
+        if (options.dryRun) throw new DryRun();
+        return ids;
+      });
+    try {
+      const ids = run();
+      return { imported: ids.length, validated: inputs.length, dryRun: false };
+    } catch (error) {
+      if (!(error instanceof DryRun)) throw error;
       return { imported: 0, validated: inputs.length, dryRun: true };
     }
-    const ids = this.mutateTrades(apply);
-    return { imported: ids.length, validated: inputs.length, dryRun: false };
   }
 
   // Dividends

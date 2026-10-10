@@ -2,7 +2,7 @@
   "name": "opendots-portfolio",
   "version": "0.1.0",
   "description": "OpenDots の Dot に保有銘柄管理ツールを提供する MCP サーバー",
-  "license": "MIT",
+  "private": true,
   "type": "module",
   "engines": {
     "node": ">=22.13"
